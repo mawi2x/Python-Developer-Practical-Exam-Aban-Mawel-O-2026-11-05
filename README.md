@@ -1,4 +1,4 @@
-# Ordered Cars
+# Cars
 
 A Django and PostgreSQL assessment project for an ordered list of 100,000 cars.
 
@@ -24,28 +24,10 @@ A Django and PostgreSQL assessment project for an ordered list of 100,000 cars.
 
 Exact Python dependency versions are recorded in `requirements.txt`.
 
-## Sample data
-
-With migrations applied, the environment loaded, and an empty car list:
-
-```sh
-python manage.py seed_cars --count 100000
-```
-
-The default random seed is 42 and the default insertion batch size is 1000.
-Names are `Car 000001`, `Car 000002`, and so on; colors are generated from the
-accepted choices and sort keys are spaced by 1000. To choose another reproducible
-dataset, use `--seed 17`. `--batch-size` changes insertion batch size without
-changing the generated dataset.
-
-Seeding uses one transaction and the same list lock as moves, appends, deletes,
-and rebalancing. A failed batch rolls back all inserted cars. Rerunning against
-any nonempty list returns an error and preserves every existing car. There is no
-implicit reset or deletion option; use a separate empty database to regenerate
-data without affecting a collection. Database-generated IDs are not part of the
-reproducible name/color/order dataset.
-
 ## Local setup
+
+The commands in this section use Bash/Zsh. For Windows, use the PowerShell
+section below.
 
 ```sh
 python3 -m venv .venv
@@ -88,6 +70,88 @@ that login, set the `POSTGRES_*` variables accordingly, and omit the Compose ste
 The test runner needs permission to create its test database (or a precreated test
 database with suitable permissions).
 
+## Windows (PowerShell)
+
+Install Python 3.14 and Docker Desktop, start Docker Desktop using Linux
+containers, and open PowerShell in the project directory. These commands use the
+virtual environment's Python directly, so activating `Activate.ps1` is optional.
+
+```powershell
+py -3.14 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+Copy-Item .env.example .env
+.\.venv\Scripts\python.exe -c "import secrets; print(secrets.token_hex(48))"
+```
+
+Edit `.env` and replace both secret/password placeholders with separate generated
+values. Do not copy over an existing configured `.env`. Load it into the current
+PowerShell process with the following block; repeat it in each new terminal:
+
+```powershell
+Get-Content .env | ForEach-Object {
+    $line = $_.Trim()
+    if ($line -match '^([A-Za-z_][A-Za-z0-9_]*)=(.*)$') {
+        $name = $Matches[1]
+        $value = $Matches[2].Trim()
+        if ($value.Length -ge 2) {
+            $first = $value.Substring(0, 1)
+            $last = $value.Substring($value.Length - 1, 1)
+            if (($first -eq $last) -and ($first -eq '"' -or $first -eq "'")) {
+                $value = $value.Substring(1, $value.Length - 2)
+            }
+        }
+        [Environment]::SetEnvironmentVariable($name, $value, 'Process')
+    }
+}
+```
+
+This reads literal `KEY=value` assignments, ignoring comments/blank lines and
+removing matching surrounding quotes. It does not evaluate shell expressions or
+expand variables. The generated hexadecimal secrets work with both shell formats.
+
+```powershell
+docker compose up -d --wait db
+.\.venv\Scripts\python.exe manage.py migrate
+.\.venv\Scripts\python.exe manage.py check --database default
+.\.venv\Scripts\python.exe manage.py runserver 127.0.0.1:8000
+```
+
+Open <http://127.0.0.1:8000/>. Stop the server with Ctrl+C. To seed an empty list
+and run checks/tests in PowerShell:
+
+```powershell
+.\.venv\Scripts\python.exe manage.py seed_cars --count 100000
+.\.venv\Scripts\python.exe -m pip check
+.\.venv\Scripts\python.exe manage.py check --database default
+.\.venv\Scripts\python.exe manage.py migrate --check
+.\.venv\Scripts\python.exe manage.py makemigrations --check --dry-run
+.\.venv\Scripts\python.exe manage.py test
+```
+
+Skip seeding if you restored the supplied database export. The test runner creates
+and removes its own database; its PostgreSQL role needs database-creation rights.
+
+## Sample data
+
+With migrations applied, the environment loaded, and an empty car list:
+
+```sh
+python manage.py seed_cars --count 100000
+```
+
+The default random seed is 42 and the default insertion batch size is 1000.
+Names are `Car 000001`, `Car 000002`, and so on; colors are generated from the
+accepted choices and sort keys are spaced by 1000. To choose another reproducible
+dataset, use `--seed 17`. `--batch-size` changes insertion batch size without
+changing the generated dataset.
+
+Seeding uses one transaction and the same list lock as moves, appends, deletes,
+and rebalancing. A failed batch rolls back all inserted cars. Rerunning against
+any nonempty list returns an error and preserves every existing car. There is no
+implicit reset or deletion option; use a separate empty database to regenerate
+data without affecting a collection. Database-generated IDs are not part of the
+reproducible name/color/order dataset.
+
 ## Settings
 
 | Variable | Purpose / default |
@@ -102,6 +166,32 @@ database with suitable permissions).
 | `POSTGRES_PORT` | `5432` |
 
 ## Checks and tests
+
+Run the single read-only environment validator after loading `.env`, starting
+PostgreSQL, and applying migrations:
+
+```sh
+python validate_environment.py
+```
+
+PowerShell equivalent:
+
+```powershell
+.\.venv\Scripts\python.exe validate_environment.py
+```
+
+It checks the supported Python version, exact dependency pins and compatibility,
+exported environment settings, Django startup, PostgreSQL connectivity/version,
+system checks, applied migrations, model/migration agreement, the shared lock row,
+and static assets. Output uses `[PASS]`, `[FAIL]`, `[WARN]`, and `[SKIP]` labels.
+It exits with code 0 when required checks pass and code 1 when they fail. Missing
+test-database creation permission is reported as a warning because the application
+can run without it. Credentials are not printed.
+
+The script reads exported variables, just like Django; it does not automatically
+load `.env`, install packages, start Docker, create databases, apply migrations,
+or change car data. A failed check tells you what to fix. It checks environment
+readiness and does not replace the application test suite below.
 
 With the environment loaded and PostgreSQL running:
 
@@ -118,6 +208,7 @@ python manage.py test
 - `config/`: settings, root URLs, ASGI and WSGI entry points.
 - `cars/`: Django application for cars.
 - `compose.yaml`: dedicated local PostgreSQL service and persistent volume.
+- `validate_environment.py`: cross-platform, read-only environment checks.
 
 ## Database schema
 
@@ -201,6 +292,11 @@ An unsupported color returns HTTP 400 with a filter error. Invalid or out-of-ran
 page numbers return HTTP 404. Empty lists use page 1. Numbered pagination uses
 database counts and offsets, so deep-page cost can grow with the dataset.
 
+Search matches car names by case-insensitive substring. Numeric searches (with
+an optional `#` prefix) match an exact car ID. Search combines with color filtering
+and is preserved during pagination and after changes. Name substring searches may
+scan the table; they do not use a dedicated text-search index.
+
 Create/edit forms accept only `name` and `color`; supplied IDs and sort keys cannot
 change those fields. The move endpoint takes its source ID from the URL and accepts
 `placement` (`before`, `beginning`, `end`) and `target_id` in the POST body. A target
@@ -211,18 +307,19 @@ the requested change.
 
 All mutations require POST with a valid CSRF token. GET requests only display pages
 or confirmation forms. Successful changes return to page 1 of the list, preserving
-a valid `color` query parameter. Form links and actions carry that parameter;
+valid `color` and `q` query parameters. Form links and actions carry that state;
 return URLs are constructed internally and arbitrary `next` URLs are ignored.
 
 ## Interface assets
 
 The interface uses Django templates, locally bundled Bootstrap 5.3.8 CSS, and
-custom CSS in `cars/static/cars/app.css`. The desktop interface uses a compact table with horizontal scrolling on narrow
-screens. Color names accompany swatches; forms include linked validation errors,
+custom CSS in `cars/static/cars/app.css`. The desktop interface uses a compact
+table with horizontal scrolling on narrow screens. Color names accompany swatches; forms include linked validation errors,
 and keyboard users have a skip link and visible focus indicators.
 
-`cars/static/cars/app.js` shows the destination input for before moves and focuses
-server validation summaries. All operations also work without JavaScript; when
+`cars/static/cars/app.js` opens Edit and Move forms in native modal dialogs,
+shows the destination input for before moves, and focuses validation summaries.
+Color filter pills and search work with standard links and GET requests. All operations also work without JavaScript; when
 moving to the beginning or end without JavaScript, leave the destination empty.
 No external fonts, CDN requests, or frontend build step are required. Bootstrap's
 MIT license is included in `cars/static/cars/vendor/bootstrap/LICENSE`.
@@ -239,6 +336,24 @@ POSTGRES_DB=ordered_cars_benchmark DJANGO_DEBUG=false python manage.py benchmark
   --count 100000 --seed 42 --runs 5 --rebalance-runs 3
 ```
 
+PowerShell equivalent, after loading `.env` as shown above:
+
+```powershell
+docker compose exec db createdb -U $env:POSTGRES_USER -O $env:POSTGRES_USER ordered_cars_benchmark
+$previousDatabase = $env:POSTGRES_DB
+$previousDebug = $env:DJANGO_DEBUG
+try {
+    $env:POSTGRES_DB = 'ordered_cars_benchmark'
+    $env:DJANGO_DEBUG = 'false'
+    .\.venv\Scripts\python.exe manage.py migrate
+    if ($LASTEXITCODE -ne 0) { throw 'Benchmark database migration failed.' }
+    .\.venv\Scripts\python.exe manage.py benchmark_cars --count 100000 --seed 42 --runs 5 --rebalance-runs 3
+} finally {
+    $env:POSTGRES_DB = $previousDatabase
+    $env:DJANGO_DEBUG = $previousDebug
+}
+```
+
 The command requires an empty car list in a database whose name contains
 `benchmark`. It seeds that database, measures paging, filtering, ordinary moves,
 and rebalancing, and prints timings and `EXPLAIN (ANALYZE, BUFFERS)` plans to the
@@ -248,7 +363,76 @@ report files.
 The benchmark dataset remains in that dedicated database. For another run, create
 a new empty benchmark database. Existing cars are never silently erased.
 
-Search matches car names by case-insensitive substring. Numeric searches (with
-an optional `#` prefix) match an exact car ID. Search combines with color filtering
-and is preserved during pagination and after changes. Name substring searches may
-scan the table; they do not use a dedicated text-search index.
+## Decisions and limitations
+
+| Choice | Benefit | Tradeoff |
+| --- | --- | --- |
+| Spaced decimal keys | Ordinary moves update one car | Repeated moves can exhaust a gap |
+| Shared list lock | Consistent moves, insertion, deletion, and seeding | Ordering and membership writes are serialized |
+| Full-list rebalance | Preserves order with a simple transactional algorithm | Updates every car and holds the list lock until commit |
+| Offset pagination | Numbered pages with 50 rows per page | Counts and deep offsets scan more data |
+| Name substring search | Simple partial-name matching | No dedicated text-search index |
+| Django templates and minimal JavaScript | Forms work without a frontend build step | Full list refresh after successful changes |
+
+There is one shared collection. The application has no authentication and is
+intended for local assessment use. Desktop layout is the primary interface;
+narrow screens can scroll the table horizontally. Moves always use global order,
+regardless of the current search or color filter.
+
+## Database export and restore
+
+The submission includes `cars-source.zip` and a PostgreSQL custom-format export,
+`cars-database.dump`. Extract the source ZIP, enter `cars-project`, and follow
+Local setup. The database export already contains the schema, migrations, and
+car data, so do not seed a restored database.
+
+To create an export of the local Compose database:
+
+```sh
+docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom --no-owner --no-acl' > cars-database.dump
+```
+
+To restore into a **new empty database**, with `.env` exported in the shell:
+
+```sh
+docker compose exec db createdb -U "$POSTGRES_USER" -O "$POSTGRES_USER" cars_restored
+docker compose exec -T db pg_restore -U "$POSTGRES_USER" -d cars_restored \
+  --no-owner --no-privileges --exit-on-error < cars-database.dump
+POSTGRES_DB=cars_restored python manage.py migrate --check
+POSTGRES_DB=cars_restored python manage.py check --database default
+POSTGRES_DB=cars_restored python manage.py runserver 127.0.0.1:8000
+```
+
+Place the dump in the working directory or adjust the input path. Use the bundled
+PostgreSQL 17 container tools to export and restore. Owner and grant restoration
+is disabled so the reviewer can use their own local role. Use a different new
+database name if `cars_restored` already exists; these commands do not erase an
+existing database. Keep exports outside version control.
+
+PowerShell export equivalent, after loading `.env`:
+
+```powershell
+docker compose exec -T db pg_dump -U $env:POSTGRES_USER -d $env:POSTGRES_DB --format=custom --no-owner --no-acl --file=/tmp/cars-export.dump
+if ($LASTEXITCODE -ne 0) { throw 'Database export failed.' }
+docker compose cp db:/tmp/cars-export.dump .\cars-database.dump
+```
+
+PowerShell restore equivalent, targeting a **new empty database**:
+
+```powershell
+docker compose exec db createdb -U $env:POSTGRES_USER -O $env:POSTGRES_USER cars_restored
+if ($LASTEXITCODE -ne 0) { throw 'Use a new database name; creation failed.' }
+docker compose cp .\cars-database.dump db:/tmp/cars-import.dump
+if ($LASTEXITCODE -ne 0) { throw 'Copying the database export failed.' }
+docker compose exec -T db pg_restore -U $env:POSTGRES_USER -d cars_restored --no-owner --no-privileges --exit-on-error /tmp/cars-import.dump
+if ($LASTEXITCODE -ne 0) { throw 'Database restore failed.' }
+$env:POSTGRES_DB = 'cars_restored'
+.\.venv\Scripts\python.exe manage.py migrate --check
+.\.venv\Scripts\python.exe manage.py check --database default
+.\.venv\Scripts\python.exe manage.py runserver 127.0.0.1:8000
+```
+
+Reload `.env` to switch back to the original database. These export/restore
+commands use `docker compose cp` to transfer the binary dump rather than shell
+redirection, so they also work with Windows PowerShell 5.1. Native binary output
+redirection changed in PowerShell 7.4; see [Microsoft's redirection documentation](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_redirection).

@@ -19,3 +19,7 @@ staticfiles/
 .aws/
 .playwright-cli/
 output/playwright/
+
+# Submission artifacts and database exports
+output/submission/
+*.dump
