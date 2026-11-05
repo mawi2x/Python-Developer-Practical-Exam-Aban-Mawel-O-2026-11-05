@@ -2,6 +2,20 @@
 
 A Django and PostgreSQL assessment project for an ordered list of 100,000 cars.
 
+## Development environment
+
+| Tool | Version / configuration |
+| --- | --- |
+| Operating system | Ubuntu 26.04.1 LTS, x86_64 |
+| Editor | Visual Studio Code 1.138.0 |
+| Python | 3.14.4, with a project-local virtual environment |
+| Django | 5.2.19 |
+| PostgreSQL | 17.6, running in Docker |
+| PostgreSQL driver | Psycopg 3.3.8 |
+| Docker Engine | 29.8.1 |
+| Docker Compose | 5.5.1 |
+| Git | 2.53.0 |
+
 ## Prerequisites
 
 - Python 3.14 (used locally); Django 5.2 also supports Python 3.10–3.13.
@@ -83,3 +97,24 @@ python manage.py test
 - `config/`: settings, root URLs, ASGI and WSGI entry points.
 - `cars/`: Django application for cars.
 - `compose.yaml`: dedicated local PostgreSQL service and persistent volume.
+
+## Database schema
+
+`Car` stores a stable `BigAutoField` ID, a required name of at most 200 characters,
+a color, and an independent `DecimalField(38, 18)` sort key. Names may repeat,
+but must contain a non-whitespace character. Accepted colors are red, blue, green,
+black, white, silver, and yellow. Queries use ascending sort-key order by default.
+
+The primary key indexes IDs. The named `cars_sort_key_unique` constraint enforces
+unique sort keys and provides an index for global ordering. It is deferrable but
+initially immediate: a transaction must explicitly defer it when temporarily
+overlapping keys are necessary. PostgreSQL checks deferred uniqueness at commit.
+The `cars_color_sort_idx` B-tree index on `(color, sort_key)` supports ordered
+color filtering. Database checks also enforce accepted colors and nonblank names.
+
+`CarList` contains the fixed row with ID 1, created by a data migration. A check
+constraint prevents other IDs. It provides a shared row for locking list mutations;
+application code must preserve this row.
+
+Django model `save()` does not call `full_clean()`. Callers must use model/form
+validation for useful input errors; database constraints protect stored data.
