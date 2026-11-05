@@ -24,6 +24,27 @@ A Django and PostgreSQL assessment project for an ordered list of 100,000 cars.
 
 Exact Python dependency versions are recorded in `requirements.txt`.
 
+## Sample data
+
+With migrations applied, the environment loaded, and an empty car list:
+
+```sh
+python manage.py seed_cars --count 100000
+```
+
+The default random seed is 42 and the default insertion batch size is 1000.
+Names are `Car 000001`, `Car 000002`, and so on; colors are generated from the
+accepted choices and sort keys are spaced by 1000. To choose another reproducible
+dataset, use `--seed 17`. `--batch-size` changes insertion batch size without
+changing the generated dataset.
+
+Seeding uses one transaction and the same list lock as moves, appends, deletes,
+and rebalancing. A failed batch rolls back all inserted cars. Rerunning against
+any nonempty list returns an error and preserves every existing car. There is no
+implicit reset or deletion option; use a separate empty database to regenerate
+data without affecting a collection. Database-generated IDs are not part of the
+reproducible name/color/order dataset.
+
 ## Local setup
 
 ```sh
@@ -205,3 +226,31 @@ server validation summaries. All operations also work without JavaScript; when
 moving to the beginning or end without JavaScript, leave the destination empty.
 No external fonts, CDN requests, or frontend build step are required. Bootstrap's
 MIT license is included in `cars/static/cars/vendor/bootstrap/LICENSE`.
+
+## Performance measurements
+
+Measured results, raw samples, and PostgreSQL query plans are in
+[docs/benchmark/README.md](docs/benchmark/README.md).
+
+To reproduce using a separate database on the local Compose service, load `.env`
+into the shell first, then run:
+
+```sh
+docker compose exec db createdb -U "$POSTGRES_USER" -O "$POSTGRES_USER" ordered_cars_benchmark
+POSTGRES_DB=ordered_cars_benchmark python manage.py migrate
+POSTGRES_DB=ordered_cars_benchmark DJANGO_DEBUG=false python manage.py benchmark_cars \
+  --count 100000 --seed 42 --runs 5 --rebalance-runs 3 \
+  --output-dir /tmp/ordered-cars-benchmark-report
+```
+
+The benchmark command requires an empty car list in a database whose name contains
+`benchmark` and an empty output directory. It seeds that database, updates planner
+statistics, measures first/deep pages and color filters, records actual
+`EXPLAIN (ANALYZE, BUFFERS)` plans, audits ordinary move/no-op row updates, and
+measures full rebalancing and a move that triggers fallback rebalancing. It also
+checks CRUD endpoints with CSRF enforcement at the populated dataset size.
+
+The command leaves the benchmark dataset in that dedicated database. For another
+run, create a new empty benchmark database and choose a new output directory.
+It never silently clears an existing database or overwrites a report. Normal
+development data is unaffected by this separate database setup.

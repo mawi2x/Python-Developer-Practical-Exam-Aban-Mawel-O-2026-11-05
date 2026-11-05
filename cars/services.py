@@ -1,5 +1,6 @@
 from contextlib import closing
 from decimal import Decimal, localcontext
+from random import Random
 
 from django.core.exceptions import ValidationError
 from django.db import connection, transaction
@@ -133,6 +134,37 @@ class CarOrderingService:
         cls._validate_id(car_id, 'car_id')
         cls._lock_list()
         Car.objects.get(pk=car_id).delete()
+
+    @classmethod
+    @transaction.atomic
+    def seed(cls, *, count, seed=42, batch_size=1000):
+        """Populate an empty list deterministically; never erase existing cars."""
+        for field, value in [('count', count), ('batch_size', batch_size)]:
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise ValidationError({field: 'Enter a positive integer.'})
+        if isinstance(seed, bool) or not isinstance(seed, int):
+            raise ValidationError({'seed': 'Enter an integer seed.'})
+        with localcontext() as ctx:
+            ctx.prec = cls.DECIMAL_PRECISION
+            if count * cls.SPACING >= cls.KEY_LIMIT:
+                raise ValidationError({'count': 'Too many cars for spaced sort keys.'})
+            cls._lock_list()
+            if Car.objects.exists():
+                raise ValidationError('Seeding requires an empty car list; existing cars were not changed.')
+            random = Random(seed)
+            batch = []
+            for position in range(1, count + 1):
+                batch.append(Car(
+                    name=f'Car {position:06d}',
+                    color=random.choice(Car.Color.values),
+                    sort_key=(position * cls.SPACING).quantize(cls.QUANTUM),
+                ))
+                if len(batch) == batch_size:
+                    Car.objects.bulk_create(batch, batch_size=batch_size)
+                    batch = []
+            if batch:
+                Car.objects.bulk_create(batch, batch_size=batch_size)
+        return count
 
     @classmethod
     @transaction.atomic

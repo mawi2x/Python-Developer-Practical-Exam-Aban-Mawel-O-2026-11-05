@@ -360,6 +360,11 @@ class OrderingConcurrencyTests(TransactionTestCase):
     def test_rebalance_waits_for_list_lock(self):
         self.assert_waits_for_list_lock(CarOrderingService.rebalance)
 
+    def test_seed_waits_for_list_lock(self):
+        Car.objects.all().delete()
+        self.assert_waits_for_list_lock(lambda: CarOrderingService.seed(count=5))
+        self.assertEqual(Car.objects.count(), 5)
+
     def run_concurrently(self, *operations):
         barrier = Barrier(len(operations))
         with ThreadPoolExecutor(max_workers=len(operations)) as executor:
