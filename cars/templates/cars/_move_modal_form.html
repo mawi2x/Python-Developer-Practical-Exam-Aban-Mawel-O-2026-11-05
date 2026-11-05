@@ -1,0 +1,9 @@
+<p class="panel-description">Move {{ object.name }} (ID {{ object.pk }}). Choose a destination ID from any page. Moves affect the global list.</p>
+<form method="post" action="{{ request.path }}{{ filter_query }}" data-move-form data-modal-move-form>
+  {% csrf_token %}
+  {% include 'cars/_form_fields.html' %}
+  <div class="form-actions">
+    <button class="btn btn-primary" type="submit">Move car</button>
+    <button class="btn btn-light" type="button" data-close-modal>Cancel</button>
+  </div>
+</form>

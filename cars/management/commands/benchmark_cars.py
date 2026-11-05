@@ -27,7 +27,6 @@ class Command(BaseCommand):
         parser.add_argument('--seed', type=int, default=42)
         parser.add_argument('--runs', type=int, default=5)
         parser.add_argument('--rebalance-runs', type=int, default=3)
-        parser.add_argument('--output-dir', default='docs/benchmark')
 
     def handle(self, *args, **options):
         if options['count'] < 100 or options['runs'] < 1 or options['rebalance_runs'] < 1:
@@ -36,10 +35,6 @@ class Command(BaseCommand):
             raise CommandError('Use a dedicated database whose name contains benchmark.')
         if Car.objects.exists():
             raise CommandError('The benchmark requires an empty car list; no existing cars were changed.')
-        output = Path(options['output_dir'])
-        if output.exists() and any(output.iterdir()):
-            raise CommandError('Output directory must be empty; previous reports will not be overwritten.')
-        output.mkdir(parents=True, exist_ok=True)
         report = {
             'recorded_at_utc': datetime.now(timezone.utc).isoformat(),
             'environment': self.environment(),
@@ -92,7 +87,7 @@ class Command(BaseCommand):
         first = Car.objects.first()
         target = Car.objects.all()[1]
         source = Car.objects.last()
-        self.write_plans(output / 'query_plans.txt', first, target, source, blue_count, options['count'])
+        self.stdout.write(self.query_plans(target, source, blue_count, options['count']))
         report['row_update_evidence'] = self.audit_move(source.pk, target.pk)
         turn = 0
 
@@ -142,9 +137,8 @@ class Command(BaseCommand):
             'rebalance_preserves_order': True, 'fallback_move_correct': True,
             'crud_endpoints': True,
         }
-        (output / 'results.json').write_text(json.dumps(report, indent=2) + '\n')
-        self.write_summary(output / 'README.md', report)
-        self.stdout.write(self.style.SUCCESS(f'Wrote timings, query plans, and report to {output}.'))
+        self.stdout.write(json.dumps(report, indent=2))
+        self.stdout.write(self.style.SUCCESS('Benchmark complete. Results are printed above.'))
 
     @staticmethod
     def measure(operation, runs, prepare=None):
@@ -192,7 +186,7 @@ class Command(BaseCommand):
             return cursor.fetchone()
 
     @staticmethod
-    def write_plans(path, first, target, source, blue_count, count):
+    def query_plans(target, source, blue_count, count):
         blue_offset = ((blue_count - 1) // 50) * 50
         all_offset = ((count - 1) // 50) * 50
         queries = {
@@ -217,7 +211,7 @@ class Command(BaseCommand):
                 cursor.execute('EXPLAIN (ANALYZE, BUFFERS) ' + sql, params)
                 plan = '\n'.join(row[0] for row in cursor.fetchall())
             sections.append(f'\n{label}\nSQL: {sql}\nParameters: {params!r}\n{plan}')
-        path.write_text('\n'.join(sections) + '\n')
+        return '\n'.join(sections)
 
     @staticmethod
     def audit_move(source_id, target_id):
@@ -277,51 +271,3 @@ class Command(BaseCommand):
         post(f'/cars/{car.pk}/delete/', {})
         if Car.objects.count() != count:
             raise CommandError('CRUD verification did not restore the dataset count.')
-
-    @staticmethod
-    def write_summary(path, report):
-        env = report['environment']
-        data = report['dataset']
-        lines = [
-            '# Performance measurements', '',
-            f'Recorded at {report["recorded_at_utc"]}.', '',
-            f'Dataset: {data["count"]:,} cars, seed {data["seed"]}, seed batches of 1000.',
-            f'Color distribution: `{json.dumps(data["colors"], sort_keys=True)}`.', '',
-            f'Environment: {env["platform"]}; {env["cpu"]}; {env["logical_cpus"]} logical CPUs; '
-            f'host memory {env["host_memory"]}.',
-            f'Python {env["python"]}, Django {env["django"]}, Psycopg {env["psycopg"]}.',
-            f'PostgreSQL: {env["postgres"]}.',
-            f'PostgreSQL settings: `{json.dumps(env["postgres_settings"], sort_keys=True)}`.',
-            f'Django DEBUG: {env["django_debug"]}. Database uses local Docker PostgreSQL and TCP.', '',
-            f'Single seed run: {report["seed_ms"]:.2f} ms.', '',
-            '| Operation | Runs | Min (ms) | Median (ms) | Max (ms) |',
-            '| --- | ---: | ---: | ---: | ---: |',
-        ]
-        for label, values in report['measurements'].items():
-            lines.append(f'| {label} | {values["runs"]} | {values["min_ms"]:.2f} | '
-                         f'{values["median_ms"]:.2f} | {values["max_ms"]:.2f} |')
-        lines += [
-            '', '## Method and interpretation', '',
-            '- `_db` includes a fresh paginator count plus fetching at most 50 model instances.',
-            '- `_django` uses the in-process Django test client, including view and template rendering. '
-            'It excludes browser, network, static assets, and application-server overhead.',
-            f'- Deep pages are page {data["last_page"]} unfiltered and page {data["blue_last_page"]} for blue.',
-            '- Read operations have one untimed warm-up each. Connections and caches are warm; '
-            'these are local sequential measurements, not a cold-cache or production load test.',
-            '- Ordinary moves alternate between before a target and the end. The row audit independently '
-            'verified one updated car for an ordinary move and zero for an already satisfied move. '
-            'The audit trigger was removed before timing.',
-            '- Full rebalancing uses batches of 500 and updates the whole list. Fallback move timings '
-            'include an actual rebalance after deliberately exhausting a decimal gap. Gap preparation '
-            'and restoration are excluded from those timings.',
-            '- Timings include transaction commits. No competing writers were active; lock contention '
-            'is not measured here and can add waiting time to any mutation.',
-            '- Order fingerprints, row counts, unique keys, and CSRF-protected CRUD endpoints were checked '
-            'at this dataset size. One updated row still incurs index maintenance.',
-            '- Offset pagination scans skipped rows; counts and deep offsets are not constant-time. '
-            'Full rebalancing holds the list lock and delays other ordering/membership writers.',
-            '- See [raw samples](results.json) and [actual query plans](query_plans.txt). '
-            'Plans show what PostgreSQL chose for this dataset; index use is not assumed.',
-            '',
-        ]
-        path.write_text('\n'.join(lines))

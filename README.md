@@ -195,7 +195,7 @@ other writers; one updated row does not imply constant total database work.
 | `/cars/<id>/delete/` | Delete confirmation | Delete through the ordering service |
 | `/cars/<id>/move/` | Move form | Move through the ordering service |
 
-The list accepts `color` and `page` query parameters, for example
+The list accepts `q` (search), `color`, and `page` query parameters, for example
 `/?color=blue&page=2`. Each page contains at most 50 cars, in global sort-key order.
 An unsupported color returns HTTP 400 with a filter error. Invalid or out-of-range
 page numbers return HTTP 404. Empty lists use page 1. Numbered pagination uses
@@ -227,30 +227,28 @@ moving to the beginning or end without JavaScript, leave the destination empty.
 No external fonts, CDN requests, or frontend build step are required. Bootstrap's
 MIT license is included in `cars/static/cars/vendor/bootstrap/LICENSE`.
 
-## Performance measurements
+## Benchmark command
 
-Measured results, raw samples, and PostgreSQL query plans are in
-[docs/benchmark/README.md](docs/benchmark/README.md).
-
-To reproduce using a separate database on the local Compose service, load `.env`
-into the shell first, then run:
+To measure performance using a separate database on the local Compose service,
+load `.env` into the shell first, then run:
 
 ```sh
 docker compose exec db createdb -U "$POSTGRES_USER" -O "$POSTGRES_USER" ordered_cars_benchmark
 POSTGRES_DB=ordered_cars_benchmark python manage.py migrate
 POSTGRES_DB=ordered_cars_benchmark DJANGO_DEBUG=false python manage.py benchmark_cars \
-  --count 100000 --seed 42 --runs 5 --rebalance-runs 3 \
-  --output-dir /tmp/ordered-cars-benchmark-report
+  --count 100000 --seed 42 --runs 5 --rebalance-runs 3
 ```
 
-The benchmark command requires an empty car list in a database whose name contains
-`benchmark` and an empty output directory. It seeds that database, updates planner
-statistics, measures first/deep pages and color filters, records actual
-`EXPLAIN (ANALYZE, BUFFERS)` plans, audits ordinary move/no-op row updates, and
-measures full rebalancing and a move that triggers fallback rebalancing. It also
-checks CRUD endpoints with CSRF enforcement at the populated dataset size.
+The command requires an empty car list in a database whose name contains
+`benchmark`. It seeds that database, measures paging, filtering, ordinary moves,
+and rebalancing, and prints timings and `EXPLAIN (ANALYZE, BUFFERS)` plans to the
+terminal. It also checks CRUD endpoints with CSRF enforcement. It does not create
+report files.
 
-The command leaves the benchmark dataset in that dedicated database. For another
-run, create a new empty benchmark database and choose a new output directory.
-It never silently clears an existing database or overwrites a report. Normal
-development data is unaffected by this separate database setup.
+The benchmark dataset remains in that dedicated database. For another run, create
+a new empty benchmark database. Existing cars are never silently erased.
+
+Search matches car names by case-insensitive substring. Numeric searches (with
+an optional `#` prefix) match an exact car ID. Search combines with color filtering
+and is preserved during pagination and after changes. Name substring searches may
+scan the table; they do not use a dedicated text-search index.

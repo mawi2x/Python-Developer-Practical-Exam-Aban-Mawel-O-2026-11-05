@@ -320,3 +320,130 @@ class PaginationTests(TestCase):
         self.assertEqual(response.status_code, 302)
         source.refresh_from_db()
         self.assertEqual(source.sort_key, Decimal('100500'))
+
+
+class EditModalTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.car = CarOrderingService.append(name='Modal car', color='blue')
+
+    def url(self):
+        return reverse('cars:edit', kwargs={'pk': self.car.pk}) + '?color=blue'
+
+    def test_modal_get_returns_prefilled_form_fragment(self):
+        response = self.client.get(self.url(), HTTP_X_MODAL_REQUEST='true')
+        self.assertContains(response, 'data-modal-edit-form')
+        self.assertContains(response, 'Modal car')
+        self.assertNotContains(response, '<html')
+
+    def test_modal_validation_keeps_changes_unsaved(self):
+        response = self.client.post(self.url(), {'name': ' ', 'color': 'red'},
+                                    HTTP_X_MODAL_REQUEST='true')
+        self.assertEqual(response.status_code, 422)
+        self.assertContains(response, 'This field is required.', status_code=422)
+        self.car.refresh_from_db()
+        self.assertEqual((self.car.name, self.car.color), ('Modal car', 'blue'))
+
+    def test_modal_save_returns_internal_redirect_and_preserves_position(self):
+        key = self.car.sort_key
+        response = self.client.post(self.url(), {'name': 'Updated', 'color': 'red'},
+                                    HTTP_X_MODAL_REQUEST='true')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {'redirect_url': reverse('cars:list') + '?color=blue'})
+        self.car.refresh_from_db()
+        self.assertEqual((self.car.name, self.car.color, self.car.sort_key), ('Updated', 'red', key))
+
+    def test_modal_save_requires_csrf(self):
+        client = Client(enforce_csrf_checks=True)
+        data = {'name': 'Updated', 'color': 'blue'}
+        self.assertEqual(client.post(self.url(), data, HTTP_X_MODAL_REQUEST='true').status_code, 403)
+        client.get(self.url(), HTTP_X_MODAL_REQUEST='true')
+        response = client.post(self.url(), data, HTTP_X_MODAL_REQUEST='true',
+                               HTTP_X_CSRFTOKEN=client.cookies['csrftoken'].value)
+        self.assertEqual(response.status_code, 200)
+
+
+class CarSearchTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.first = CarOrderingService.append(name='Roadster Alpha', color='blue')
+        cls.second = CarOrderingService.append(name='Roadster Beta', color='red')
+        cls.third = CarOrderingService.append(name='Sedan', color='blue')
+
+    def test_name_search_is_case_insensitive_and_preserves_order(self):
+        response = self.client.get(reverse('cars:list'), {'q': 'ROADSTER'})
+        self.assertEqual([car.pk for car in response.context['cars']], [self.first.pk, self.second.pk])
+        self.assertEqual(response.context['total_count'], 3)
+
+    def test_exact_id_search(self):
+        for query in [str(self.second.pk), f'#{self.second.pk}']:
+            with self.subTest(query=query):
+                response = self.client.get(reverse('cars:list'), {'q': query})
+                self.assertEqual([car.pk for car in response.context['cars']], [self.second.pk])
+
+    def test_search_combines_with_color_and_survives_edit(self):
+        response = self.client.get(reverse('cars:list'), {'color': 'blue', 'q': 'Roadster'})
+        self.assertEqual([car.pk for car in response.context['cars']], [self.first.pk])
+        self.assertContains(response, '?color=red&amp;q=Roadster')
+        url = reverse('cars:edit', kwargs={'pk': self.first.pk}) + '?color=blue&q=Roadster'
+        response = self.client.post(url, {'name': 'Roadster Alpha', 'color': 'blue'})
+        self.assertEqual(response.url, reverse('cars:list') + '?color=blue&q=Roadster')
+
+    def test_no_matches_is_not_presented_as_an_empty_database(self):
+        response = self.client.get(reverse('cars:list'), {'q': 'missing'})
+        self.assertContains(response, 'No matching cars')
+        self.assertEqual(len(response.context['cars']), 0)
+
+    def test_large_numeric_search_does_not_overflow(self):
+        response = self.client.get(reverse('cars:list'), {'q': '9' * 100})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context['cars']), 0)
+
+    def test_overlong_search_is_rejected(self):
+        self.assertEqual(self.client.get(reverse('cars:list'), {'q': 'x' * 201}).status_code, 400)
+
+    def test_search_pagination_retains_query(self):
+        Car.objects.bulk_create([
+            Car(name=f'Match {i}', color='blue', sort_key=Decimal((i + 10) * 1000))
+            for i in range(55)
+        ])
+        response = self.client.get(reverse('cars:list'), {'q': 'Match', 'page': 2})
+        self.assertEqual(len(response.context['cars']), 5)
+        self.assertContains(response, '?q=Match&amp;page=1')
+
+
+class MoveModalTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.cars = create_fixture()
+
+    def url(self):
+        return reverse('cars:move', kwargs={'pk': self.cars['C'].pk}) + '?color=red&q=C'
+
+    def test_modal_get_returns_move_form_fragment(self):
+        response = self.client.get(self.url(), HTTP_X_MODAL_REQUEST='true')
+        self.assertContains(response, 'data-modal-move-form')
+        self.assertContains(response, 'name="target_id"')
+        self.assertNotContains(response, '<html')
+
+    def test_invalid_destination_stays_in_modal_without_moving(self):
+        response = self.client.post(self.url(), {'placement': 'before', 'target_id': 999999},
+                                    HTTP_X_MODAL_REQUEST='true')
+        self.assertContains(response, 'The destination car does not exist.', status_code=422)
+        self.assertEqual(Car.objects.get(pk=self.cars['C'].pk).sort_key, Decimal('4000'))
+
+    def test_modal_move_returns_internal_redirect(self):
+        response = self.client.post(self.url(), {'placement': 'before', 'target_id': self.cars['B'].pk},
+                                    HTTP_X_MODAL_REQUEST='true')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {'redirect_url': reverse('cars:list') + '?color=red&q=C'})
+        self.assertEqual(Car.objects.get(pk=self.cars['C'].pk).sort_key, Decimal('1500'))
+
+    def test_modal_move_requires_csrf(self):
+        client = Client(enforce_csrf_checks=True)
+        data = {'placement': 'beginning'}
+        self.assertEqual(client.post(self.url(), data, HTTP_X_MODAL_REQUEST='true').status_code, 403)
+        client.get(self.url(), HTTP_X_MODAL_REQUEST='true')
+        response = client.post(self.url(), data, HTTP_X_MODAL_REQUEST='true',
+                               HTTP_X_CSRFTOKEN=client.cookies['csrftoken'].value)
+        self.assertEqual(response.status_code, 200)

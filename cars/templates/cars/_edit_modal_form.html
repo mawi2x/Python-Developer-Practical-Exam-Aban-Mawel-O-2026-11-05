@@ -1,0 +1,9 @@
+<p class="panel-description">{{ object.name }} (ID {{ object.pk }}). Its position stays the same.</p>
+<form method="post" action="{{ request.path }}{{ filter_query }}" data-modal-edit-form>
+  {% csrf_token %}
+  {% include 'cars/_form_fields.html' %}
+  <div class="form-actions">
+    <button class="btn btn-primary" type="submit">Save changes</button>
+    <button class="btn btn-light" type="button" data-close-modal>Cancel</button>
+  </div>
+</form>

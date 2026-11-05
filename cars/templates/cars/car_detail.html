@@ -1,10 +1,9 @@
 {% extends 'cars/base.html' %}
-{% block title %}{{ car.name }} — Ordered Cars{% endblock %}
 {% block content %}
 <a class="back-link" href="{{ return_url }}">Back to cars</a>
 <section class="detail-panel">
   <h1>{{ car.name }}</h1>
   <dl class="detail-facts"><div><dt>Car ID</dt><dd>#{{ car.pk }}</dd></div><div><dt>Color</dt><dd>{% include 'cars/_color.html' %}</dd></div></dl>
-  <div class="detail-actions"><a class="btn btn-primary" href="{% url 'cars:edit' car.pk %}{{ filter_query }}">Edit car</a><a class="btn btn-outline-secondary" href="{% url 'cars:move' car.pk %}{{ filter_query }}">Move car</a><a class="delete-link" href="{% url 'cars:delete' car.pk %}{{ filter_query }}">Delete car</a></div>
+  <div class="detail-actions"><a class="btn btn-primary" data-edit-modal href="{% url 'cars:edit' car.pk %}{{ filter_query }}">Edit car</a><a class="btn btn-outline-secondary" data-move-modal href="{% url 'cars:move' car.pk %}{{ filter_query }}">Move car</a><a class="delete-link" href="{% url 'cars:delete' car.pk %}{{ filter_query }}">Delete car</a></div>
 </section>
 {% endblock %}

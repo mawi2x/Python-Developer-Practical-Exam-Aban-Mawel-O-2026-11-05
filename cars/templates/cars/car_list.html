@@ -1,19 +1,31 @@
 {% extends 'cars/base.html' %}
 {% block content %}
 <section class="page-heading">
-  <div><h1>Cars</h1><p class="page-description">{{ total_count }} car{{ total_count|pluralize }}{% if selected_color %} · {{ paginator.count }} matching {{ selected_color }}{% endif %}</p></div>
+  <div><h1>Cars</h1><p class="page-description">{{ total_count }} car{{ total_count|pluralize }}{% if selected_color or search_query %} · {{ paginator.count }} matching{% if selected_color %} {{ selected_color }}{% endif %}{% if search_query %} for “{{ search_query }}”{% endif %}{% endif %}</p></div>
   <a class="btn btn-primary" href="{% url 'cars:create' %}{{ filter_query }}">Add car</a>
 </section>
 <section class="collection-panel" aria-label="Car collection">
   <div class="collection-toolbar">
-    <form method="get" action="{% url 'cars:list' %}" class="filter-form">
-      <label for="{{ filter_form.color.id_for_label }}">Filter by color</label>
-      {{ filter_form.color }}
-      <button class="btn btn-outline-secondary" type="submit">Filter</button>
-      {% if selected_color or filter_form.errors %}<a class="clear-filter" href="{% url 'cars:list' %}">Clear filter</a>{% endif %}
+    <nav class="color-filters" aria-label="Filter by color">
+      <span class="filter-label">Filter by color</span>
+      <a class="color-filter{% if not selected_color and not filter_form.errors %} active{% endif %}" href="{% url 'cars:list' %}{% if search_query %}?q={{ search_query|urlencode }}{% endif %}"{% if not selected_color and not filter_form.errors %} aria-current="true"{% endif %}>All colors</a>
+      {% for value, label in filter_form.fields.color.choices %}
+        {% if value %}
+        <a class="color-filter{% if selected_color == value %} active{% endif %}" href="{% url 'cars:list' %}?color={{ value|urlencode }}{% if search_query %}&amp;q={{ search_query|urlencode }}{% endif %}"{% if selected_color == value %} aria-current="true"{% endif %}>
+          <span class="color-swatch swatch-{{ value }}" aria-hidden="true"></span>{{ label }}
+        </a>
+        {% endif %}
+      {% endfor %}
+    </nav>
+    <form class="search-form" method="get" action="{% url 'cars:list' %}" role="search">
+      {% if selected_color %}<input type="hidden" name="color" value="{{ selected_color }}">{% endif %}
+      <label class="visually-hidden" for="{{ filter_form.q.id_for_label }}">Search cars by name or ID</label>
+      {{ filter_form.q }}
+      <button class="btn btn-primary" type="submit">Search</button>
+      {% if search_query %}<a class="clear-filter" href="{% url 'cars:list' %}{% if selected_color %}?color={{ selected_color }}{% endif %}">Clear search</a>{% endif %}
     </form>
   </div>
-  {% if filter_form.errors %}<div class="alert alert-danger mx-4" role="alert" tabindex="-1" data-error-summary id="{{ filter_form.color.auto_id }}_error">{% for error in filter_form.color.errors %}{{ error }}{% endfor %}</div>{% endif %}
+  {% if filter_form.errors %}<div class="alert alert-danger mx-4" role="alert" tabindex="-1" data-error-summary id="{{ filter_form.color.auto_id }}_error">{% for field in filter_form %}{% for error in field.errors %}<p class="mb-0">{{ field.label }}: {{ error }}</p>{% endfor %}{% endfor %}</div>{% endif %}
   {% if cars %}
   <table class="table cars-table mb-0">
     <caption class="visually-hidden">Cars in global order. Each row has edit, move, and delete actions.</caption>
@@ -25,8 +37,8 @@
         <td class="car-name" data-label="Car name"><a href="{% url 'cars:detail' car.pk %}{{ filter_query }}">{{ car.name }}</a></td>
         <td class="car-color" data-label="Color">{% include 'cars/_color.html' %}</td>
         <td class="car-actions" data-label="Actions"><div class="row-actions">
-          <a href="{% url 'cars:edit' car.pk %}{{ filter_query }}" aria-label="Edit {{ car.name }} (ID {{ car.pk }})">Edit</a>
-          <a href="{% url 'cars:move' car.pk %}{{ filter_query }}" aria-label="Move {{ car.name }} (ID {{ car.pk }})">Move</a>
+          <a data-edit-modal href="{% url 'cars:edit' car.pk %}{{ filter_query }}" aria-label="Edit {{ car.name }} (ID {{ car.pk }})">Edit</a>
+          <a data-move-modal href="{% url 'cars:move' car.pk %}{{ filter_query }}" aria-label="Move {{ car.name }} (ID {{ car.pk }})">Move</a>
           <a class="delete-link" href="{% url 'cars:delete' car.pk %}{{ filter_query }}" aria-label="Delete {{ car.name }} (ID {{ car.pk }})">Delete</a>
         </div></td>
       </tr>
@@ -36,26 +48,25 @@
   {% else %}
   <div class="empty-state">
     {% if filter_form.errors %}
-      <h2>Invalid color filter</h2><p>Choose a color from the list to see matching cars.</p><a class="btn btn-outline-secondary" href="{% url 'cars:list' %}">View all cars</a>
-    {% elif selected_color %}
-      <h2>No matching cars</h2><p>Clear the filter to view all cars.</p><a class="btn btn-outline-secondary" href="{% url 'cars:list' %}">View all cars</a>
+      <h2>Invalid search or filter</h2><p>Check your search and color selection.</p><a class="btn btn-outline-secondary" href="{% url 'cars:list' %}">View all cars</a>
+    {% elif selected_color or search_query %}
+      <h2>No matching cars</h2><p>Try another search or clear the filters to view all cars.</p><a class="btn btn-outline-secondary" href="{% url 'cars:list' %}">View all cars</a>
     {% else %}
       <h2>No cars yet</h2><p>Add a car to get started.</p><a class="btn btn-primary" href="{% url 'cars:create' %}">Add car</a>
     {% endif %}
   </div>
   {% endif %}
   <div class="collection-bottom">
-    <p class="order-note">Moves affect all cars, including those hidden by a filter.</p>
     {% if is_paginated %}
     <nav class="pagination-nav" aria-label="Pagination">
       {% if page_obj.has_previous %}
-        <a class="page-control" aria-label="First page" href="?{% if selected_color %}color={{ selected_color }}&amp;{% endif %}page=1">«</a>
-        <a class="page-control" aria-label="Previous page" href="?{% if selected_color %}color={{ selected_color }}&amp;{% endif %}page={{ page_obj.previous_page_number }}">‹</a>
+        <a class="page-control" aria-label="First page" href="?{% if selected_color %}color={{ selected_color }}&amp;{% endif %}{% if search_query %}q={{ search_query|urlencode }}&amp;{% endif %}page=1">«</a>
+        <a class="page-control" aria-label="Previous page" href="?{% if selected_color %}color={{ selected_color }}&amp;{% endif %}{% if search_query %}q={{ search_query|urlencode }}&amp;{% endif %}page={{ page_obj.previous_page_number }}">‹</a>
       {% endif %}
       <span class="page-position" aria-current="page">Page {{ page_obj.number }} of {{ paginator.num_pages }}</span>
       {% if page_obj.has_next %}
-        <a class="page-control" aria-label="Next page" href="?{% if selected_color %}color={{ selected_color }}&amp;{% endif %}page={{ page_obj.next_page_number }}">›</a>
-        <a class="page-control" aria-label="Last page" href="?{% if selected_color %}color={{ selected_color }}&amp;{% endif %}page={{ paginator.num_pages }}">»</a>
+        <a class="page-control" aria-label="Next page" href="?{% if selected_color %}color={{ selected_color }}&amp;{% endif %}{% if search_query %}q={{ search_query|urlencode }}&amp;{% endif %}page={{ page_obj.next_page_number }}">›</a>
+        <a class="page-control" aria-label="Last page" href="?{% if selected_color %}color={{ selected_color }}&amp;{% endif %}{% if search_query %}q={{ search_query|urlencode }}&amp;{% endif %}page={{ paginator.num_pages }}">»</a>
       {% endif %}
     </nav>
     {% else %}<span class="page-position">Page 1 of 1</span>{% endif %}

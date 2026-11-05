@@ -20,6 +20,10 @@ class CarForm(BootstrapFormMixin, forms.ModelForm):
 
 
 class ColorFilterForm(BootstrapFormMixin, forms.Form):
+    q = forms.CharField(
+        required=False, max_length=200, label='Search cars',
+        widget=forms.TextInput(attrs={'type': 'search', 'placeholder': 'Search name or ID'}),
+    )
     color = forms.ChoiceField(
         choices=[('', 'All colors')] + Car.Color.choices,
         required=False,
