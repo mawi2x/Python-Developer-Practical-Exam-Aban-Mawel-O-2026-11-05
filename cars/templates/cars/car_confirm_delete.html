@@ -1,0 +1,15 @@
+{% extends 'cars/base.html' %}
+{% block title %}Delete {{ car.name }} — Ordered Cars{% endblock %}
+{% block content %}
+<a class="back-link" href="{{ return_url }}">Back to cars</a>
+<section class="form-panel" aria-labelledby="form-title">
+  <h1 id="form-title">Delete car?</h1>
+  <p class="panel-description">This action cannot be undone. Other cars will keep their order.</p>
+  <div class="car-summary"><span class="summary-id">#{{ car.pk }}</span><strong>{{ car.name }}</strong>{% include 'cars/_color.html' %}</div>
+  <form method="post" action="{{ request.path }}{{ filter_query }}">
+    {% csrf_token %}
+    {% include 'cars/_form_fields.html' %}
+    <div class="form-actions"><button class="btn btn-danger" type="submit">Delete car</button><a class="btn btn-light" href="{{ return_url }}">Cancel</a></div>
+  </form>
+</section>
+{% endblock %}

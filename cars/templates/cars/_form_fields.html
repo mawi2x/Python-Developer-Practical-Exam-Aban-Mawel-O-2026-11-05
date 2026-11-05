@@ -1,0 +1,15 @@
+{% if form.errors %}
+<div class="alert alert-danger error-summary" role="alert" tabindex="-1" data-error-summary>
+  <p class="fw-semibold mb-1">Please check your entries.</p>
+  {% for error in form.non_field_errors %}<p class="mb-1">{{ error }}</p>{% endfor %}
+  <ul class="mb-0">{% for field in form %}{% for error in field.errors %}<li><a href="#{{ field.id_for_label }}">{{ field.label }}: {{ error }}</a></li>{% endfor %}{% endfor %}</ul>
+</div>
+{% endif %}
+{% for field in form %}
+<div class="field-group" {% if field.name == 'target_id' %}data-target-field{% endif %}>
+  <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %}<span class="required-label" aria-hidden="true">Required</span>{% endif %}</label>
+  {{ field }}
+  {% if field.help_text %}<div class="form-text" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</div>{% endif %}
+  {% if field.errors %}<div class="invalid-feedback d-block" id="{{ field.auto_id }}_error">{% for error in field.errors %}<p class="mb-0">{{ error }}</p>{% endfor %}</div>{% endif %}
+</div>
+{% endfor %}

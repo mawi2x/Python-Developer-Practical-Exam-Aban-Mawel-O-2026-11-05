@@ -17,3 +17,5 @@ staticfiles/
 .agents/
 .codex/
 .aws/
+.playwright-cli/
+output/playwright/

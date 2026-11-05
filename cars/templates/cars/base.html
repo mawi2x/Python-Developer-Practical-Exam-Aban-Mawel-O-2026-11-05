@@ -1,0 +1,25 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="{% static 'cars/favicon.svg' %}" type="image/svg+xml">
+  <title>{% block title %}Ordered Cars{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'cars/vendor/bootstrap/bootstrap.min.css' %}">
+  <link rel="stylesheet" href="{% static 'cars/app.css' %}?v=2">
+  <script src="{% static 'cars/app.js' %}" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <header class="site-header"><div class="app-container header-inner"><a class="brand" href="{{ return_url }}">Ordered Cars</a></div></header>
+  <main id="main-content" class="app-container main-content" tabindex="-1">
+    {% if messages %}
+      <div class="messages" aria-live="polite" aria-atomic="true">
+        {% for message in messages %}<div class="alert {% if message.tags == 'error' %}alert-danger{% else %}alert-success{% endif %}" role="status">{{ message }}</div>{% endfor %}
+      </div>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

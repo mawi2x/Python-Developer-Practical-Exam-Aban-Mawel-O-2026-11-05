@@ -1,0 +1,14 @@
+{% extends 'cars/base.html' %}
+{% block title %}{% if object %}Edit car{% else %}Add car{% endif %} — Ordered Cars{% endblock %}
+{% block content %}
+<a class="back-link" href="{{ return_url }}">Back to cars</a>
+<section class="form-panel" aria-labelledby="form-title">
+  <h1 id="form-title">{% if object %}Edit car{% else %}Add car{% endif %}</h1>
+  <p class="panel-description">{% if object %}Update {{ object.name }} (ID {{ object.pk }}). Its position stays the same.{% else %}New cars are added to the end of the list.{% endif %}</p>
+  <form method="post" action="{{ request.path }}{{ filter_query }}">
+    {% csrf_token %}
+    {% include 'cars/_form_fields.html' %}
+    <div class="form-actions"><button class="btn btn-primary" type="submit">{% if object %}Save changes{% else %}Add car{% endif %}</button><a class="btn btn-light" href="{{ return_url }}">Cancel</a></div>
+  </form>
+</section>
+{% endblock %}

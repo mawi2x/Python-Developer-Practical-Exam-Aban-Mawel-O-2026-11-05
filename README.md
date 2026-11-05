@@ -118,3 +118,90 @@ application code must preserve this row.
 
 Django model `save()` does not call `full_clean()`. Callers must use model/form
 validation for useful input errors; database constraints protect stored data.
+
+## Ordering service
+
+Use `CarOrderingService` in `cars/services.py` for membership and ordering changes:
+
+```python
+from cars.services import CarOrderingService
+
+car = CarOrderingService.append(name='Roadster', color='blue')
+CarOrderingService.move(car.id, placement='beginning')
+CarOrderingService.move(car.id, placement='end')
+# Move before an existing car, using its ID:
+CarOrderingService.move(car.id, placement='before', target_id=destination_id)
+CarOrderingService.delete(car.id)
+```
+
+Each operation opens an atomic transaction and locks `CarList` row 1 before
+reading order state. This serializes ordering and membership writes. Direct ORM
+inserts, deletes, and sort-key updates bypass the protocol and must not be used
+by application callers. Name/color edits must save only those fields so a stale
+model instance cannot overwrite a concurrent move.
+
+New cars use spacing of 1000. An interior move uses an exact decimal midpoint;
+beginning and end moves subtract or add 1000 to the remaining list's boundary.
+For example, moving C before B in D(1000), B(2000), E(3000), C(4000), A(5000)
+assigns C the key 1500, producing D, C, B, E, A. Neighbor lookup always uses the
+global list, including cars hidden by a color filter.
+
+An ordinary move updates one car row and reads bounded results from indexed
+queries. Self moves and already satisfied positions return `False` without any
+car updates; successful moves return `True`. Append returns the saved car.
+Invalid instructions or append fields raise Django `ValidationError`; missing
+source or target IDs raise `Car.DoesNotExist`. IDs must be positive integers.
+
+Finite decimal gaps and field bounds can require rebalancing. The service
+preserves global order, redistributes spaced keys in batches of 500, then retries
+the requested operation in the same transaction. It temporarily defers the named
+sort-key uniqueness constraint and restores immediate checking after rebalancing.
+The explicit `CarOrderingService.rebalance()` method uses the same lock and
+transaction rules. A failed operation rolls back its rebalance as well.
+
+Full-list rebalancing is exceptional and can update every car while holding the
+list lock. Ordinary one-row moves still incur index maintenance and can wait for
+other writers; one updated row does not imply constant total database work.
+
+## Pages and endpoints
+
+| URL | GET | POST |
+| --- | --- | --- |
+| `/` | Ordered car list | Not allowed |
+| `/cars/add/` | Add form | Append a car |
+| `/cars/<id>/` | Car details | Not allowed |
+| `/cars/<id>/edit/` | Edit form | Update name and color |
+| `/cars/<id>/delete/` | Delete confirmation | Delete through the ordering service |
+| `/cars/<id>/move/` | Move form | Move through the ordering service |
+
+The list accepts `color` and `page` query parameters, for example
+`/?color=blue&page=2`. Each page contains at most 50 cars, in global sort-key order.
+An unsupported color returns HTTP 400 with a filter error. Invalid or out-of-range
+page numbers return HTTP 404. Empty lists use page 1. Numbered pagination uses
+database counts and offsets, so deep-page cost can grow with the dataset.
+
+Create/edit forms accept only `name` and `color`; supplied IDs and sort keys cannot
+change those fields. The move endpoint takes its source ID from the URL and accepts
+`placement` (`before`, `beginning`, `end`) and `target_id` in the POST body. A target
+ID is required for `before` and must be empty for beginning/end. It may refer to a
+car on another page or hidden by the current filter. Missing sources return 404;
+missing destinations and other invalid form inputs show errors without applying
+the requested change.
+
+All mutations require POST with a valid CSRF token. GET requests only display pages
+or confirmation forms. Successful changes return to page 1 of the list, preserving
+a valid `color` query parameter. Form links and actions carry that parameter;
+return URLs are constructed internally and arbitrary `next` URLs are ignored.
+
+## Interface assets
+
+The interface uses Django templates, locally bundled Bootstrap 5.3.8 CSS, and
+custom CSS in `cars/static/cars/app.css`. The desktop interface uses a compact table with horizontal scrolling on narrow
+screens. Color names accompany swatches; forms include linked validation errors,
+and keyboard users have a skip link and visible focus indicators.
+
+`cars/static/cars/app.js` shows the destination input for before moves and focuses
+server validation summaries. All operations also work without JavaScript; when
+moving to the beginning or end without JavaScript, leave the destination empty.
+No external fonts, CDN requests, or frontend build step are required. Bootstrap's
+MIT license is included in `cars/static/cars/vendor/bootstrap/LICENSE`.

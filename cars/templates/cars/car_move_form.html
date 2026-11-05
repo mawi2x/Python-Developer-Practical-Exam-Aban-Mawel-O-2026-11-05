@@ -1,0 +1,14 @@
+{% extends 'cars/base.html' %}
+{% block title %}Move {{ car.name }} — Ordered Cars{% endblock %}
+{% block content %}
+<a class="back-link" href="{{ return_url }}">Back to cars</a>
+<section class="form-panel" aria-labelledby="form-title">
+  <h1 id="form-title">Move car</h1>
+  <p class="panel-description">{{ car.name }} (ID {{ car.pk }}). Moves affect the global list, including cars hidden by a color filter. Use a destination ID from any page.</p>
+  <form method="post" action="{{ request.path }}{{ filter_query }}" data-move-form>
+    {% csrf_token %}
+    {% include 'cars/_form_fields.html' %}
+    <div class="form-actions"><button class="btn btn-primary" type="submit">Move car</button><a class="btn btn-light" href="{{ return_url }}">Cancel</a></div>
+  </form>
+</section>
+{% endblock %}
