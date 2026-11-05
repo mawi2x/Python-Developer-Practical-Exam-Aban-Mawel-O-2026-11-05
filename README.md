@@ -363,21 +363,6 @@ report files.
 The benchmark dataset remains in that dedicated database. For another run, create
 a new empty benchmark database. Existing cars are never silently erased.
 
-## Decisions and limitations
-
-| Choice | Benefit | Tradeoff |
-| --- | --- | --- |
-| Spaced decimal keys | Ordinary moves update one car | Repeated moves can exhaust a gap |
-| Shared list lock | Consistent moves, insertion, deletion, and seeding | Ordering and membership writes are serialized |
-| Full-list rebalance | Preserves order with a simple transactional algorithm | Updates every car and holds the list lock until commit |
-| Offset pagination | Numbered pages with 50 rows per page | Counts and deep offsets scan more data |
-| Name substring search | Simple partial-name matching | No dedicated text-search index |
-| Django templates and minimal JavaScript | Forms work without a frontend build step | Full list refresh after successful changes |
-
-There is one shared collection. The application has no authentication and is
-intended for local assessment use. Desktop layout is the primary interface;
-narrow screens can scroll the table horizontally. Moves always use global order,
-regardless of the current search or color filter.
 
 ## Database export and restore
 
